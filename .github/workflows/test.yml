@@ -1,0 +1,54 @@
+name: Testing Checking External PRs
+
+on:
+  pull_request_target:
+    branches:
+      - main
+
+permissions: {} # best practice to avoid adding too many permissions, define at job level instead
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    if: |
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      github.event.action == 'opened'
+    steps:
+      - name: Check for external PRs
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0, best to pin the version to a SHA to prevent any malicious code from being injected into a version tag
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## 👋 Thanks for your contribution!
+
+            Since this PR comes from a forked repository
+            Please ensure that your PR branch name starts with your username. Eg. myusername/feature/my-feature **not main**
+            
+
+  second_job:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    if: github.event.pull_request.head.ref != 'main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Process Branch Name
+        id: process-branch-name
+        env:
+          LOCAL_REPO_NAME: ${{ github.event.pull_request.head.repo.full_name }}
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+        run: |
+          sanitized_branch_name=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
+          if [[ ${LOCAL_REPO_NAME} != ${GITHUB_REPOSITORY} ]]; then
+            user_name=$(gh api --method GET repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }} --jq '.user.login')
+            sanitized_branch_name="${user_name}/${sanitized_branch_name}"
+          fi
+          echo "processedBranchName=$sanitized_branch_name" >> $GITHUB_OUTPUT
